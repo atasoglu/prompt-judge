@@ -1,7 +1,8 @@
 import asyncio
-import sys
 
 from openai import AsyncOpenAI
+
+from . import log
 
 STRATEGIES: dict[str, str] = {
     "extractive": (
@@ -40,20 +41,28 @@ async def _summarize_one(
     strategy: str,
     model: str,
     extra_instructions: str,
+    reasoning_effort: str | None = None,
 ) -> dict:
     system = STRATEGIES[strategy]
     if extra_instructions:
         system = f"{system}\n\nAdditional instructions: {extra_instructions}"
 
-    response = await client.chat.completions.create(
+    kwargs: dict = dict(
         model=model,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": f"Compress this:\n\n{prompt}"},
         ],
-        temperature=0.3,
     )
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+    else:
+        kwargs["temperature"] = 0.3
+
+    log.req_summarize(strategy, model, reasoning_effort, log.nws(prompt))
+    response = await client.chat.completions.create(**kwargs)
     text = (response.choices[0].message.content or "").strip()
+    log.res_summarize(strategy, text, response.usage)
     return {"strategy": strategy, "text": text}
 
 
@@ -63,16 +72,18 @@ async def run_summarizers(
     strategies: list[str],
     model: str,
     extra_instructions: str = "",
+    reasoning_effort: str | None = None,
 ) -> list[dict]:
     tasks = [
-        _summarize_one(client, prompt, s, model, extra_instructions) for s in strategies
+        _summarize_one(client, prompt, s, model, extra_instructions, reasoning_effort)
+        for s in strategies
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     valid = []
     for r in results:
         if isinstance(r, Exception):
-            print(f"[warn] summarizer failed: {r}", file=sys.stderr)
+            log.warn(f"summarizer failed: {r}")
         else:
             valid.append(r)
     return valid

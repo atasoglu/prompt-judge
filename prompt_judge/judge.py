@@ -1,9 +1,10 @@
 import json
 import random
 import re
-import sys
 
 from openai import AsyncOpenAI
+
+from . import log
 
 _RUBRIC_FIELDS = [
     "instruction_coverage",
@@ -61,6 +62,7 @@ async def judge_summaries(
     summaries: list[dict],
     model: str,
     attempts: int = 3,
+    reasoning_effort: str | None = None,
 ) -> dict:
     # Shuffle and assign anonymous labels — counters position bias
     order = list(range(len(summaries)))
@@ -78,14 +80,20 @@ async def judge_summaries(
     last_err: Exception | None = None
     for attempt in range(attempts):
         try:
-            resp = await client.chat.completions.create(
+            kwargs: dict = dict(
                 model=model,
                 messages=[
                     {"role": "system", "content": _JUDGE_SYSTEM},
                     {"role": "user", "content": user_content},
                 ],
-                temperature=attempt * 0.1,  # slight bump on retry
             )
+            if reasoning_effort:
+                kwargs["reasoning_effort"] = reasoning_effort
+            else:
+                kwargs["temperature"] = attempt * 0.1  # slight bump on retry
+
+            log.req_judge(model, reasoning_effort, len(summaries), log.nws(original))
+            resp = await client.chat.completions.create(**kwargs)
             raw = (resp.choices[0].message.content or "").strip()
             result = _extract_json(raw)
 
@@ -105,13 +113,20 @@ async def judge_summaries(
                 lbl: s["strategy"] for lbl, s in label_map.items()
             }
             result["label_to_text"] = {lbl: s["text"] for lbl, s in label_map.items()}
+
+            winner_score = result["scores"].get(winner, {}).get("total", 0.0)
+            log.res_judge(
+                winner,
+                result["winner_strategy"],
+                winner_score,
+                result.get("reasoning", ""),
+                resp.usage,
+            )
+
             return result
 
         except Exception as e:
             last_err = e
-            print(
-                f"[warn] judge attempt {attempt + 1}/{attempts} failed: {e}",
-                file=sys.stderr,
-            )
+            log.warn(f"judge attempt {attempt + 1}/{attempts} failed: {e}")
 
     raise RuntimeError(f"Judge failed after {attempts} attempts: {last_err}")

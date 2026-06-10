@@ -3,10 +3,15 @@ import math
 
 from openai import AsyncOpenAI
 
+from . import log
 
-async def _embed(client: AsyncOpenAI, text: str, model: str) -> list[float]:
+
+async def _embed(
+    client: AsyncOpenAI, text: str, model: str, label: str = ""
+) -> tuple[list[float], object]:
+    log.req_embed(model, log.nws(text), label or "text")
     resp = await client.embeddings.create(model=model, input=text)
-    return resp.data[0].embedding
+    return resp.data[0].embedding, resp.usage
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -22,8 +27,10 @@ async def embedding_similarity(
     compressed: str,
     model: str,
 ) -> float:
-    a, b = await asyncio.gather(
-        _embed(client, original, model),
-        _embed(client, compressed, model),
+    (a, ua), (b, ub) = await asyncio.gather(
+        _embed(client, original, model, "original"),
+        _embed(client, compressed, model, "compressed"),
     )
-    return _cosine(a, b)
+    sim = _cosine(a, b)
+    log.res_embed(sim, ua, ub)
+    return sim

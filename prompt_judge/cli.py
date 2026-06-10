@@ -4,6 +4,8 @@ import io
 import os
 import sys
 
+from dotenv import load_dotenv
+
 from .compress import Config, compress
 from .summarizers import STRATEGIES
 
@@ -18,13 +20,28 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("prompt", nargs="?", help="Prompt text to compress.")
+    p.add_argument(
+        "--file",
+        "-f",
+        default=None,
+        metavar="FILE",
+        help="Read prompt from FILE instead of argument or stdin.",
+    )
 
     g = p.add_argument_group("model settings")
     g.add_argument(
         "--model",
-        default="gpt-4o-mini",
+        default="gpt-5.5",
         metavar="MODEL",
-        help="Summarizer model (default: gpt-4o-mini)",
+        help="Summarizer model (default: gpt-5.5)",
+    )
+    g.add_argument(
+        "--reasoning-effort",
+        default="medium",
+        choices=["low", "medium", "high"],
+        metavar="LEVEL",
+        help="Reasoning effort for models that support it (default: medium). "
+        "Set to empty string to disable and use temperature instead.",
     )
     g.add_argument(
         "--judge-model",
@@ -102,12 +119,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
 async def _run(args) -> None:
     # ── Read prompt ──────────────────────────────────────────────────────────
-    if args.prompt:
+    if args.file:
+        try:
+            with open(args.file) as fh:
+                original = fh.read().strip()
+        except OSError as e:
+            print(f"Error: cannot read file '{args.file}': {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.prompt:
         original = args.prompt.strip()
     elif not sys.stdin.isatty():
         original = sys.stdin.read().strip()
     else:
-        print("Error: provide PROMPT as argument or pipe via stdin.", file=sys.stderr)
+        print(
+            "Error: provide PROMPT as argument, --file FILE, or pipe via stdin.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     if not original:
@@ -127,6 +154,7 @@ async def _run(args) -> None:
         extra_instructions=args.instructions,
         base_url=args.base_url,
         api_key=api_key,
+        reasoning_effort=args.reasoning_effort or None,
     )
 
     # ── Run ───────────────────────────────────────────────────────────────────
@@ -143,23 +171,12 @@ async def _run(args) -> None:
         if log_file:
             log_file.close()
 
-    # ── Summary ───────────────────────────────────────────────────────────────
-    print(
-        f"\n{'=' * 60}\n"
-        f"Original:   {len(result['original'])} chars\n"
-        f"Compressed: {len(result['compressed'])} chars\n"
-        f"Ratio:      {result['compression_ratio']:.1%}\n"
-        f"Score:      {result['score']:.3f}\n"
-        f"Found:      iteration {result['found_at_iteration']}\n"
-        f"{'=' * 60}",
-        file=real_stderr,
-    )
-
     # Compressed prompt → stdout
     print(result["compressed"])
 
 
 def main() -> None:
+    load_dotenv()
     parser = _build_parser()
     args = parser.parse_args()
     asyncio.run(_run(args))
