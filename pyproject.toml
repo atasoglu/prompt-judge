@@ -1,0 +1,22 @@
+[project]
+name = "prompt-judge"
+version = "0.1.0"
+description = "Iteratively compress a prompt while preserving semantic fidelity."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=2.41.1",
+]
+
+[project.scripts]
+prompt-judge = "prompt_judge.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+    "ruff>=0.15.16",
+]
