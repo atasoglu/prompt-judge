@@ -13,7 +13,7 @@ uv sync                        # install all dependencies
 
 ## Architecture
 
-`prompt-judge` is a CLI tool that iteratively compresses a prompt while preserving semantic fidelity. The project is in early design/implementation phase — `PLAN.md` is the authoritative design document.
+`prompt-judge` is a CLI tool that iteratively compresses a prompt while preserving semantic fidelity.
 
 **Core loop (per iteration):**
 1. N summarizer agents compress the current prompt in parallel (`asyncio` + async OpenAI client), each using a different strategy: *extractive*, *abstractive*, *structure-preserving*, *role-preserving*.
